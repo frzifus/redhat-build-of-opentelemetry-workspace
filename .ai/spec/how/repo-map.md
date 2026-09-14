@@ -24,6 +24,7 @@ Lookup table: concern → repo(s) → spec file(s). Use this to find where to go
 | OCB build and `_build/` generation | redhat-opentelemetry-collector | `how/build-pipeline.md` |
 | RPM packaging | redhat-opentelemetry-collector | `what/productization.md` |
 | Non-repudiation signing (SDK + collector processor) | redhat-opentelemetry-collector | `what/signing.md` |
+| RHEL metering (bootstrap script + stock components) | redhat-opentelemetry-collector | `what/rhel-metering.md` |
 
 ## Operator
 
