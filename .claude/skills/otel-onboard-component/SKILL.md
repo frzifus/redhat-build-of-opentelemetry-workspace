@@ -1,14 +1,16 @@
 ---
-name: onboard-component
+name: otel-onboard-component
 description: >
-  Onboard or deprecate a collector component (receiver, processor, exporter,
-  connector, extension) in the Red Hat build of OpenTelemetry. Takes a Jira
-  Epic as input, gathers context, verifies upstream stability, and drives
-  the cross-repo changes: manifest, docs, spec, PRs, and Jira updates.
+  Use when adding a new collector component (receiver, processor, exporter,
+  connector, extension) to, or deprecating one from, the Red Hat build of
+  OpenTelemetry. Takes a Jira ticket as input, gathers context, verifies
+  upstream stability, and drives the cross-repo changes: manifest, docs, spec,
+  PRs, and Jira updates. For deprecation the component stays shipped and a
+  deprecation-warning alert is added.
 argument-hint: "TRACING-1234"
 ---
 
-# Onboard a Collector Component
+# Onboard or Deprecate a Collector Component
 
 Add or deprecate a receiver, processor, exporter, connector, or extension
 in the Red Hat build of OpenTelemetry. This is a cross-repo procedure
@@ -17,24 +19,29 @@ spanning multiple repositories.
 ## Usage
 
 ```
-/onboard-component TRACING-1234
+/otel-onboard-component TRACING-1234
 ```
 
-The Jira Epic key is required. If no argument is provided, ask the user
-for the Epic key before proceeding.
+The Jira ticket key is required. The ticket is usually a Story created from a
+spec (brainstorming → `/make-jira-from-spec` → implement with this skill), but
+an Epic also works — the skill reads its child stories. If no argument is
+provided, ask the user for the ticket key before proceeding.
 
 ## Workflow
 
 ### Step 1: Gather Context from Jira
 
-Use the `/jira:jira` skill to fetch the Epic and its child stories. Extract:
+Use the `/jira:jira` skill to fetch the ticket. If it is an Epic, also fetch
+its child stories. Extract:
 - Component name and type (receiver, processor, exporter, connector, extension)
+- Whether this is an onboarding or a deprecation
 - Target support level (TP or GA)
 - Any existing PRs linked in the issues
 - Blockers or decisions noted in issue comments
 
-Review all child stories under the Epic. Identify which steps have already
-been completed (e.g. manifest.yaml PR already merged) and which are blocked.
+When the ticket is an Epic, review all child stories to identify which steps
+have already been completed (e.g. manifest.yaml PR already merged) and which
+are blocked.
 
 ### Step 2: Verify Upstream Stability
 
@@ -95,8 +102,8 @@ with the correct support level.
 
 ### Step 5: Open PRs
 
-Open PRs in each repo. Every PR **must** link the Jira Epic and relevant
-Story in the description.
+Open PRs in each repo. Every PR **must** link the Jira ticket (Epic and/or
+Story) in the description.
 
 PR title format: `TRACING-XXXX: <summary>`
 
@@ -105,30 +112,49 @@ PR title format: `TRACING-XXXX: <summary>`
 After PRs are opened:
 - Link each PR to its corresponding Jira Story
 - Transition completed Stories
-- Add a comment on the Epic summarizing progress
+- Add a comment summarizing progress (on the Epic when there is one)
 
 ## Deprecating a Component
 
-Reverse the onboarding steps:
+A deprecated component is **not removed** — it keeps shipping so existing
+users' pipelines don't break. Deprecation announces the upcoming removal and
+gives users time to migrate. Actual removal happens in a later, separate
+release.
 
-1. Remove from `manifest.yaml`, rebuild per the repo's `AGENTS.md`
-2. Remove the doc module and its assembly include from `openshift-docs`
-3. Update the collector spec table in `.ai/spec/what/collector.md`
-4. Note removed components in the release notes and update the changelog
-5. Update Jira accordingly
+1. **`konflux-opentelemetry`** — add a `GoogleCloudExporterDeprecationWarning`-style
+   deprecation alert. Edit
+   `bundle-patch/manifests/opentelemetry-operator-alerts_monitoring.coreos.com_v1_prometheusrule.yaml`
+   to add a `PrometheusRule` warning that names the component and the release
+   in which it will be removed.
+   Reference: https://github.com/os-observability/konflux-opentelemetry/pull/1002
+2. **`openshift-docs`** — add a deprecation note to the component's existing
+   doc module (do not delete it).
+3. **Workspace (this repo)** — mark the component as deprecated in the
+   `.ai/spec/what/collector.md` table (keep the row).
+4. Note the deprecation in the release notes and update the changelog.
+5. Update Jira accordingly.
 
-For a reference deprecation PR, see:
-https://github.com/os-observability/konflux-opentelemetry/pull/1002
+Leave `manifest.yaml` and the `_build/` source untouched — the component is
+still built and shipped.
 
 ## Checklist
 
+### Onboarding
 - [ ] Upstream stability verified (beta+ for TP, TP for one release for GA)
-- [ ] `manifest.yaml` entry added/removed with correct version
+- [ ] `manifest.yaml` entry added with correct version
 - [ ] `_build/` regenerated and committed
 - [ ] Build passes (per repo's `AGENTS.md`)
 - [ ] Changelog updated
-- [ ] Component row added/updated in `.ai/spec/what/collector.md`
-- [ ] AsciiDoc module created/removed in `openshift-docs/modules/`
+- [ ] Component row added in `.ai/spec/what/collector.md`
+- [ ] AsciiDoc module created in `openshift-docs/modules/`
 - [ ] Assembly file updated with `include::` directive
 - [ ] All PRs link Jira Epic and Story
 - [ ] Jira Stories transitioned and updated
+
+### Deprecation
+- [ ] Deprecation-warning `PrometheusRule` alert added in `konflux-opentelemetry`
+- [ ] Deprecation note added to the doc module (module kept)
+- [ ] Component marked deprecated in `.ai/spec/what/collector.md` (row kept)
+- [ ] Release notes and changelog updated
+- [ ] `manifest.yaml` and `_build/` left unchanged (component still shipped)
+- [ ] Jira updated
