@@ -113,6 +113,8 @@ support levels do not apply.
 
 ## Cross-Reference
 
+- Codebase navigation (module map, data flow, integration points):
+  `how/deploy-periodic-agent.md`.
 - Detailed design and rationale:
   `docs/superpowers/specs/2026-09-18-deploy-periodic-agent-design.md`.
 - Tracking: **TRACING-6824** (sub-task of **TRACING-6383** — "How to automate

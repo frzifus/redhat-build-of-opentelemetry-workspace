@@ -52,6 +52,14 @@ Lookup table: concern → repo(s) → spec file(s). Use this to find where to go
 |---|---|---|
 | Product documentation (install, configure, use) | openshift-docs (branch: standalone-otel-docs-main) | — |
 
+## Workspace Tooling
+
+| Concern | Repo | Spec Files |
+|---|---|---|
+| Deploy a workspace skill as an agentic periodic job | rhobs/redhat-build-of-opentelemetry-workspace, openshift/release | `what/deploy-periodic-agent.md`, `how/deploy-periodic-agent.md` |
+| Skill-agent runner image | rhobs/redhat-build-of-opentelemetry-workspace (`ci/Dockerfile`) | `how/deploy-periodic-agent.md` |
+| Shared agent step & periodic jobs | openshift/release (`ci-operator/…/openshift-observability/skill-agent/`) | `how/deploy-periodic-agent.md` |
+
 ## Cross-Repo Features
 
 These features span multiple repos:

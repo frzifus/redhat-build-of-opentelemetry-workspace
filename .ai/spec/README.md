@@ -34,6 +34,7 @@ AI agents. Content is optimized for precision and machine consumption.
 | Understand RHEL metering | `what/rhel-metering.md` |
 | Understand 3.12 new components | `what/collector-3.12-components.md` |
 | Understand periodic-agent deployment tooling | `what/deploy-periodic-agent.md` |
+| Navigate periodic-agent tooling code | `how/deploy-periodic-agent.md` |
 | Find which repo to edit | `how/repo-map.md` |
 | Understand repo layout | `how/project-structure.md` |
 | Understand the build pipeline | `how/build-pipeline.md` |
@@ -46,6 +47,7 @@ AI agents. Content is optimized for precision and machine consumption.
 | `what/collector.md`, `what/obi.md` | `how/repo-map.md` (Collector sections) |
 | `what/operator.md` | `how/repo-map.md` (Operator section) |
 | `what/productization.md` | `how/build-pipeline.md`, `how/repo-map.md` (Productization section) |
+| `what/deploy-periodic-agent.md` | `how/deploy-periodic-agent.md` |
 
 ## Conventions
 
