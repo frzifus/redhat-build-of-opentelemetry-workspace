@@ -7,12 +7,15 @@ job** in `openshift/release`. The periodic runs the Claude Code CLI with the
 chosen skill loaded as its system prompt, and nothing else.
 
 It reuses the Distributed-Tracing QE agent's Google Vertex AI backend and
-credentials via a new, **de-gated** shared agent step that runs unconditionally
-(the qe-agent only fires after a test failure). The skill is **baked into a
-purpose-built runner image** (`ci/Dockerfile`) rather than fetched over the
-network: `ci-operator` checks out this repo at `main` and rebuilds the image on
-every job run, so the skill content is a single source of truth and always
-current, with no runtime network dependency.
+credentials via **de-gated** shared agent steps that run unconditionally (the
+qe-agent only fires after a test failure). Because `ci-operator` binds
+`credentials:` to a step ref and a `test:` entry can only reference a ref, the
+credential tiers are split across **two** refs: a **Vertex-only default** and a
+**Vertex + Jira** variant used only by skills that need Jira. The skill is
+**baked into a purpose-built runner image** (`ci/Dockerfile`) rather than fetched
+over the network: `ci-operator` checks out this repo at `main` and rebuilds the
+image on every job run, so the skill content is a single source of truth and
+always current, with no runtime network dependency.
 
 The entire capability is **[PLANNED: TRACING-6824]**. This is internal
 workspace/CI tooling, not a customer-facing product feature, so the GA/TP
@@ -46,15 +49,19 @@ support levels do not apply.
 
 2. **[PLANNED: TRACING-6824]**: One-time setup onboards this repo into
    `openshift/release` (base `ci-operator/config/rhobs/redhat-build-of-opentelemetry-workspace/…`)
-   and creates **one** shared agent step,
-   `openshift-observability-skill-agent`, under
-   `ci-operator/step-registry/openshift-observability/skill-agent/`.
+   and creates **two** shared agent steps split by credential tier, under
+   `ci-operator/step-registry/openshift-observability/skill-agent/`:
+   `openshift-observability-skill-agent` (Vertex only, the default) and
+   `openshift-observability-skill-agent-jira` (Vertex + Jira).
 
-### Shared agent step
+### Shared agent steps
 
-3. **[PLANNED: TRACING-6824]**: The shared step is **de-gated** — it runs Claude
-   unconditionally, with no `has_test_failures` check. One step serves every
-   skill, parameterized by the `AGENT_SKILL` environment variable.
+3. **[PLANNED: TRACING-6824]**: The shared steps are **de-gated** — they run
+   Claude unconditionally, with no `has_test_failures` check. Both refs are
+   otherwise identical and are parameterized by the `AGENT_SKILL` environment
+   variable; they differ only in the credentials they mount (rule 5). A skill is
+   wired to exactly one of them at onboarding, defaulting to the Vertex-only
+   `openshift-observability-skill-agent`.
 
 4. **[PLANNED: TRACING-6824]**: The step **reads `SKILL.md` from the baked
    image** at
@@ -62,20 +69,37 @@ support levels do not apply.
    The image is built by `ci-operator`'s `images:` phase from this repo's
    `ci/Dockerfile` with `context_dir: .`, checked out at `main` and rebuilt every
    run. Skills are the single source of truth in this repo and are **not
-   vendored** into `openshift/release`; there is no runtime network fetch.
+   vendored** into `openshift/release`; there is no runtime network fetch. To
+   keep the chosen skill as the system prompt **and nothing else**, the step runs
+   `claude` from a working directory that does **not** contain this repo's
+   `CLAUDE.md`/`AGENTS.md` (the baked image sets `WORKDIR` to the repo root, which
+   `claude --print` would otherwise auto-load), so no repo instructions are added
+   to the skill's context.
 
-5. **[PLANNED: TRACING-6824]**: The step runs on the purpose-built runner image
-   (`ci/Dockerfile`, built as `rhosdt-skill-agent-runner`) and reuses the
-   qe-agent's Vertex AI configuration and credentials: `ci-claude-code` (Vertex
-   service account) and `distributed-tracing` (Jira secrets).
+5. **[PLANNED: TRACING-6824]**: Both steps run on the purpose-built runner image
+   (`ci/Dockerfile`, built as `rhosdt-skill-agent-runner`) and reuse the
+   qe-agent's Vertex AI configuration. Because `ci-operator` binds `credentials:`
+   to the ref and a `test:` entry can only reference a ref (it cannot drop
+   credentials from a shared ref), the two tiers are separate refs rather than
+   one shared step:
+   - `openshift-observability-skill-agent` (**default**): mounts only
+     `ci-claude-code` (Vertex service account). No Jira secrets.
+   - `openshift-observability-skill-agent-jira`: mounts `ci-claude-code` **and**
+     `distributed-tracing` (Jira secrets), for the skills that need Jira.
+
+   Jira secrets are therefore **not** granted to every onboarded skill by
+   default. This is not the rejected per-skill ref (Approach B): there are two
+   fixed refs by tier, not one per skill.
 
 ### Per-skill onboarding
 
 6. **[PLANNED: TRACING-6824]**: Onboarding a skill generates a periodic `test:`
-   entry that runs **only** the shared agent step (no cluster profile by
+   entry that runs **only** one shared agent step (no cluster profile by
    default, no test suite), with `AGENT_SKILL` set to the skill name and a
-   user-chosen `cron`. The deployed skill is schedule-agnostic; the cadence is
-   chosen at onboarding time.
+   user-chosen `cron`. The step defaults to the Vertex-only
+   `openshift-observability-skill-agent`; a skill that needs Jira is wired to
+   `openshift-observability-skill-agent-jira` instead. The deployed skill is
+   schedule-agnostic; the cadence is chosen at onboarding time.
 
 7. **[PLANNED: TRACING-6824]**: The skill name must match `^[A-Za-z0-9_-]+$`
    (which also prevents path traversal into the baked image) and correspond to

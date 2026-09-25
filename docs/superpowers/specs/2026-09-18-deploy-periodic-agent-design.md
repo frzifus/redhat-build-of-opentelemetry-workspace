@@ -14,10 +14,13 @@ on a schedule the user picks (e.g. daily), and does nothing else.
 
 The design reuses the existing Distributed-Tracing QE agent machinery
 (`openshift-observability-qe-agent`) — its runner image, Google Vertex AI
-backend, and credentials — but with a **new, de-gated agent step** that runs
+backend, and credentials — but with **new, de-gated agent steps** that run
 unconditionally (the existing qe-agent only fires after a test failure) and
-reads the skill from a purpose-built runner image that bakes in this repo's
+read the skill from a purpose-built runner image that bakes in this repo's
 content (built from `ci/Dockerfile`), so there is no runtime network fetch.
+Credentials are split across **two** tier refs (Vertex-only default and
+Vertex + Jira) because `ci-operator` binds `credentials:` to a ref and a `test:`
+entry can only reference a ref — see "Credentials & services".
 
 **Two distinct phases, with very different frequencies:**
 
@@ -52,14 +55,20 @@ missing, then never again.
   failure-gated qe-agent step unchanged (Approach C, rejected).
 - Solving GitLab and VPN access now — these are documented follow-ups.
 
-## Chosen approach (A): one generalized agent step + a thin meta-skill
+## Chosen approach (A): generalized agent steps + a thin meta-skill
 
-Add **one** new step-registry ref to `openshift/release` that runs Claude
+Add generalized step-registry refs to `openshift/release` that run Claude
 unconditionally against a skill named by `AGENT_SKILL`, read from the baked
-runner image built from this repo.
+runner image built from this repo. There are **two** such refs, split only by
+credential tier — a Vertex-only default and a Vertex + Jira variant — because
+`ci-operator` binds `credentials:` to a ref and a `test:` entry can only
+reference a ref, so a single shared step cannot drop Jira secrets for skills that
+do not need them. This is still Approach A (two fixed refs by tier), **not** the
+rejected per-skill ref (Approach B).
 The meta-skill in this repo is a generator + guide: for any chosen skill it
-produces a periodic-job config that runs only that step, regenerates the Prow
-jobs, and walks the user through pre-merge testing and the PR.
+produces a periodic-job config that runs only the appropriate tier's step,
+regenerates the Prow jobs, and walks the user through pre-merge testing and the
+PR.
 
 Rejected alternatives:
 - **B — a dedicated step per skill:** more boilerplate and OWNERS churn in
@@ -73,24 +82,36 @@ Rejected alternatives:
 
 ### In `openshift/release`
 
-1. **New agent step** — under the existing observability namespace:
+1. **Two new agent steps (split by credential tier)** — under the existing
+   observability namespace:
    `ci-operator/step-registry/openshift-observability/skill-agent/`
-   → ref name `openshift-observability-skill-agent` (proposed; see Open questions).
-   - `openshift-observability-skill-agent-ref.yaml`: `from: rhosdt-skill-agent-runner`
-     (the image built from this repo's `ci/Dockerfile`); `credentials:` copied
-     from the qe-agent (`ci-claude-code` → Vertex SA at
-     `/var/run/claude-code-service-account`, `distributed-tracing` → Jira secrets
-     at `/var/run/dt-secrets`); Vertex env (`CLAUDE_CODE_USE_VERTEX=1`,
-     `CLOUD_ML_REGION`, `ANTHROPIC_VERTEX_PROJECT_ID`, `CLAUDE_MODEL`,
-     `STEP_TIMEOUT_MINUTES`); and `env:` declaring `AGENT_SKILL`.
+   → ref names `openshift-observability-skill-agent` (Vertex-only default) and
+   `openshift-observability-skill-agent-jira` (Vertex + Jira). The tiers are
+   separate refs because `ci-operator` binds `credentials:` to a ref and a
+   `test:` entry can only reference a ref, so it cannot drop credentials from a
+   single shared ref (the qe-agent's `ref.yaml` is the precedent for where
+   credentials live).
+   - `openshift-observability-skill-agent-ref.yaml` (**default**):
+     `from: rhosdt-skill-agent-runner` (the image built from this repo's
+     `ci/Dockerfile`); `credentials:` only `ci-claude-code` → Vertex SA at
+     `/var/run/claude-code-service-account`; Vertex env
+     (`CLAUDE_CODE_USE_VERTEX=1`, `CLOUD_ML_REGION`,
+     `ANTHROPIC_VERTEX_PROJECT_ID`, `CLAUDE_MODEL`, `STEP_TIMEOUT_MINUTES`); and
+     `env:` declaring `AGENT_SKILL`. **No Jira secrets.**
+   - `openshift-observability-skill-agent-jira-ref.yaml`: identical to the
+     default plus `distributed-tracing` → Jira secrets at `/var/run/dt-secrets`,
+     for the skills that need Jira.
    - `openshift-observability-skill-agent-commands.sh`: a **de-gated** variant
-     of the qe-agent script. Validates `AGENT_SKILL` against `^[A-Za-z0-9_-]+$`
-     (also prevents path traversal), reads the skill from the baked image at
+     of the qe-agent script, **shared by both refs**. Validates `AGENT_SKILL`
+     against `^[A-Za-z0-9_-]+$` (also prevents path traversal), reads the skill
+     from the baked image at
      `/tmp/redhat-build-of-opentelemetry-workspace/.claude/skills/$AGENT_SKILL/SKILL.md`
      (no `curl`, no size-cap/`--max-redirs` handling — the content is local),
      then runs `claude --print --dangerously-skip-permissions
-     --system-prompt "$SKILL_CONTENT" ...` and emits the same cost/audit/metrics
-     artifacts. **No `has_test_failures` gate** — it always runs.
+     --system-prompt "$SKILL_CONTENT" ...` from a working directory without this
+     repo's `CLAUDE.md`/`AGENTS.md` (so only the skill is the system prompt) and
+     emits the same cost/audit/metrics artifacts. **No `has_test_failures`
+     gate** — it always runs.
    - `OWNERS`: inherits / reuses the existing `openshift-observability` step
      OWNERS (no new approver to invent).
    - `README.md`, `.metadata.json`.
@@ -107,7 +128,8 @@ Rejected alternatives:
    - `as: <skill>-agent`
    - `cron: <user value>` (schedule-agnostic skill; the user picks the cadence)
    - `steps.test: [{ref: openshift-observability-skill-agent}]` — **only** the
-     agent step, nothing else
+     agent step, nothing else; the `-jira` ref is used instead when the skill
+     needs Jira
    - `steps.env.AGENT_SKILL: <name>`
    - **no** cluster profile / workflow by default (added only if a future skill
      needs a cluster)
@@ -137,11 +159,13 @@ otherwise it skips straight to per-skill onboarding.
 
 1. **Onboard the repo** — create the base
    `ci-operator/config/rhobs/redhat-build-of-opentelemetry-workspace/…` config.
-2. **Create the shared agent step** under
+2. **Create the two shared agent steps** under
    `ci-operator/step-registry/openshift-observability/skill-agent/`, cloning the
-   qe-agent's `ref.yaml` (credentials, Vertex env, model, timeout) with the
-   de-gated `commands.sh`. This one step serves every skill, parameterized by
-   `AGENT_SKILL`.
+   qe-agent's `ref.yaml` (Vertex env, model, timeout) with the de-gated
+   `commands.sh`: a Vertex-only default (`ci-claude-code` only) and a Vertex +
+   Jira variant (`ci-claude-code` + `distributed-tracing`). Both serve every
+   skill, parameterized by `AGENT_SKILL`; the tier split keeps Jira secrets off
+   the default path.
 3. **Confirm prerequisites** — the `ci-claude-code` credential collection and
    `distributed-tracing` rover group are org-agnostic collections and should be
    usable from the new `rhobs/...` config; the skill flags it if
@@ -179,11 +203,18 @@ Inputs: target `.claude/skills/<name>` and a cron schedule.
 
 ## Credentials & services
 
-Reused from the qe-agent (sufficient for the step to run and to reach Jira):
+Reused from the qe-agent, but **split into two tier refs** so Jira secrets are
+not granted to every onboarded skill by default. `ci-operator` binds
+`credentials:` to a ref and a `test:` entry can only reference a ref (it cannot
+subtract credentials from a shared ref), so the tiers must be separate refs:
 
-- **Vertex AI** — `ci-claude-code` collection → SA token at
+- **`openshift-observability-skill-agent` (default)** — **Vertex AI only**:
+  `ci-claude-code` collection → SA token at
   `/var/run/claude-code-service-account/google-token`.
-- **Jira** — `distributed-tracing` collection → `/var/run/dt-secrets`.
+- **`openshift-observability-skill-agent-jira`** — Vertex AI **plus Jira**:
+  the above plus `distributed-tracing` collection → `/var/run/dt-secrets`. Used
+  only by skills that need Jira (today just the `rhosdt-release-notes-audit`
+  placeholder, which is blocked on the GitLab/VPN gaps below anyway).
 
 **Known gaps — required by the placeholder skill, not yet solved (follow-ups):**
 
@@ -232,6 +263,8 @@ Errors stop the flow and are surfaced verbatim.
 
 ## Open questions / follow-ups
 
-- Exact new step ref name (`openshift-observability-skill-agent` proposed).
+- ~~Exact new step ref name.~~ **Resolved:** two refs split by credential tier,
+  `openshift-observability-skill-agent` (Vertex-only default) and
+  `openshift-observability-skill-agent-jira` (Vertex + Jira).
 - GitLab credential collection + mount path.
 - VPN / internal-network mechanism for the agent step.

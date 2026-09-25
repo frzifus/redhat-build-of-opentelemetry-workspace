@@ -1,6 +1,6 @@
 # Red Hat Build of OpenTelemetry — Specifications
 
-Red Hat build of OpenTelemetry (RHOSDT) is an OpenTelemetry distribution for OpenShift. It packages the upstream OpenTelemetry Collector, Operator, and auto-instrumentation into a supported, FIPS-compliant product distributed via OLM. These specs cover the product's behavioral rules and codebase navigation across all six repositories in the workspace.
+Red Hat build of OpenTelemetry (RHOSDT) is an OpenTelemetry distribution for OpenShift. It packages the upstream OpenTelemetry Collector, Operator, and auto-instrumentation into a supported, FIPS-compliant product distributed via OLM. These specs cover the product's behavioral rules and codebase navigation across the repositories in the workspace, plus the workspace's own CI/automation tooling (e.g. `deploy-periodic-agent`, which spans this repo and `openshift/release`).
 
 ## Structure
 
@@ -11,7 +11,7 @@ Red Hat build of OpenTelemetry (RHOSDT) is an OpenTelemetry distribution for Ope
 
 ## Scope
 
-**Covered:** The OpenTelemetry Collector (core + contrib + Red Hat distro), the Kubernetes Operator (CRDs, controllers, auto-instrumentation, target allocator), productization via Konflux, and product documentation.
+**Covered:** The OpenTelemetry Collector (core + contrib + Red Hat distro), the Kubernetes Operator (CRDs, controllers, auto-instrumentation, target allocator), productization via Konflux, product documentation, and workspace CI/automation tooling that reaches into `openshift/release` (e.g. `deploy-periodic-agent`).
 
 **Out of scope:** Upstream OpenTelemetry SDK libraries, language-specific instrumentation library internals, Tempo/Jaeger backends, Cluster Observability Operator (COO).
 
